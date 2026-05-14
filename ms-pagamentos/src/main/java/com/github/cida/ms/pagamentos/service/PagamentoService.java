@@ -1,8 +1,10 @@
 package com.github.cida.ms.pagamentos.service;
 
+import com.github.cida.ms.pagamentos.client.PedidoClient;
 import com.github.cida.ms.pagamentos.dto.PagamentoDTO;
 import com.github.cida.ms.pagamentos.entities.Pagamento;
 import com.github.cida.ms.pagamentos.entities.Status;
+import com.github.cida.ms.pagamentos.exceptions.PagamentoAprovadoException;
 import com.github.cida.ms.pagamentos.exceptions.ResourceNotFoundException;
 import com.github.cida.ms.pagamentos.repository.PagamentoRepository;
 import jakarta.persistence.EntityNotFoundException;
@@ -17,6 +19,9 @@ public class PagamentoService {
 
     @Autowired
     private PagamentoRepository pagamentoRepository;
+
+    @Autowired
+    private PedidoClient pedidoClient;
 
     @Transactional(readOnly = true)
     public List<PagamentoDTO> findAllPagamento(){
@@ -52,6 +57,12 @@ public class PagamentoService {
 
         try {
             Pagamento pagamento = pagamentoRepository.getReferenceById(id);
+
+            if(pagamento.getStatus().equals(Status.APROVADO)){
+                throw new PagamentoAprovadoException(
+                        String.format("Pagamento id %id já está aprovado e não pode estar alterado")
+                );
+            }
             mapDtoToPagamento(pagamentoDTO, pagamento);
             pagamento.setStatus(pagamentoDTO.getStatus());
             pagamento = pagamentoRepository.save(pagamento);
@@ -80,6 +91,19 @@ public class PagamentoService {
         pagamento.setValidade(pagamentoDTO.getValidade());
         pagamento.setCodigoSeguranca(pagamentoDTO.getCodigoSeguranca());
         pagamento.setPedidoId(pagamentoDTO.getPedidoId());
+    }
+
+    @Transactional
+    public PagamentoDTO confirmarPagamentoDoPedido(Long id) {
+
+        Pagamento pagamento = pagamentoRepository.findById(id).orElseThrow(
+                () -> new ResourceNotFoundException("Pagamento não encontrado. ID: " + id)
+        );
+
+        pagamento.setStatus(Status.APROVADO);
+        pagamentoRepository.save(pagamento);
+        pedidoClient.confirmarPagamento(pagamento.getPedidoId());
+        return new PagamentoDTO(pagamento);
     }
 
 }
